@@ -17,4 +17,13 @@ func()
         # Product.objects.using(self.db_name).filter(code__in=product_codes, partner_domain__in=created_by)
 
         # Q(code__in=product_codes) & Q(partner_domain__in=created_by)
+        # (Q(title__icontains=q) | Q(
+        # message__icontains=q) | Q(code__icontains=q))
 
+        #  for key, y in van_obj.iterrows():
+        #  for key, x in van_settlement_objs.iterrows():
+
+        # base_rate_objects = BaseRateMapping.objects.using(db_name)
+        # base_rate_name = map(lambda base_rate_object: base_rate_objects.rate_name ,base_rate_objects)
+        # base_rate_objects.delete()
+        # Product.objects.using(db_name).filter(name__in=base_rate_name).delete()
