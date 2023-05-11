@@ -1,0 +1,119 @@
+@csrf_exempt
+@validate_session
+def get_report_excess_short(request):
+        hostname = request.get_host()
+        from multitenancy.utils import get_customer_db_name_using_hostname
+        from reports.schemas import DateFilter
+        from core.models import Instance
+        from reports.utils import ExcessAndShortReport
+        import pandas as pd
+        import psycopg2 as pg
+        logger_params = get_logger_default_parameters(request)
+        deflogger = get_log_object(request)
+        deflogger.set_logfor('system')
+        deflogger.set_level("info")
+
+        try:
+            req_data_json = json.loads(request.body)
+            db_name = get_customer_db_name_using_hostname(hostname)
+            cdb = settings.DATABASES[db_name] if settings.DATABASES.has_key(db_name) else None
+            engine = pg.connect("dbname='%s' user='%s' host='%s' port='%s' password='%s'" % (cdb['NAME'], cdb['USER'], cdb['HOST'], cdb['PORT'], cdb['PASSWORD']))
+            username = req_data_json.get('username', None)
+            product_data = req_data_json.get('product', None)
+            van_data = req_data_json.get('van', None)
+            product_code = ''
+            van_code = ''
+            if  product_data: 
+                product_code = product_data['code']
+            if van_data:
+                van_code = van_data['code']
+            user = User.objects.using(db_name).filter(username=username).first()
+            start_date = req_data_json.get('start_date', None)
+            end_date = req_data_json.get('end_date', None)
+            report_start_date = datetime.strptime(str(start_date)+ " 00:00:00", '%d/%m/%Y %H:%M:%S')
+            report_end_date = datetime.strptime(str(end_date)+ " 23:59:59", '%d/%m/%Y %H:%M:%S')
+
+            samp_sql = ""
+            if start_date and end_date:
+                if start_date:
+                    start_date = datetime.strptime(start_date, "%d/%m/%Y").strftime("%Y-%m-%d")
+
+                if end_date:
+                    end_date = datetime.strptime(end_date, "%d/%m/%Y").strftime("%Y-%m-%d")
+
+                instance = Instance(db_name, hostname)
+                samp_sql = samp_sql + "WHERE created_on >= '{start_date}' and created_on <= '{end_date}' ".format(start_date=start_date, end_date=end_date)
+
+                if product_code:
+                    samp_sql = samp_sql + " AND product_code = '{product_code}'".format(product_code=product_code)
+
+                if van_code:
+                    samp_sql = samp_sql + " AND van_code = '{van_code}'".format(van_code=van_code)
+            
+            else:
+                samp_sql = ""
+
+
+            order_sql = " ORDER BY created_on"
+            rows = []
+            report_rows = []
+            rowcount = 0
+            sql = "SELECT * FROM eod_report " + samp_sql + order_sql
+            van_name_sql = "SELECT * FROM van_van"
+            header = ['SERIAL NUMBER', 'ROUTE NAME', 'ROUTE CODE', 'DESCRIPTION','DATE', 'ITEM NAME', 'ITEM CODE', 'EXCESS IN STOCK', 'SHORT IN STOCK', 'RATE']
+            van_settlement_objs = pd.read_sql(sql, con=engine)
+            van_obj = pd.read_sql(van_name_sql, con=engine)
+            vancodedict = {}
+            productcodedict = {}
+            try:
+                product_code = {row.get('product_code') for index, row in van_settlement_objs.iterrows()}
+                products = list(Product.objects.using(db_name).filter(code__in=product_code).values('code','description'))
+                for y in products:
+                    description = y.get('description')
+                    pcode = y.get('code')
+                    productcodedict.update({
+                        pcode: description
+                    })
+            except Exception as e:
+                err = str(traceback.format_exc())
+                print('ERROR report generation = ', err, ' on hostname: ', hostname)
+
+            for key, y in van_obj.iterrows():
+                name = y.get('name')
+                code = y.get('code')
+                vancodedict.update({
+                    code: name
+                })
+         
+            van_settlement_objs.drop_duplicates(subset=['product_code'], inplace=True)
+            for key, x in van_settlement_objs.iterrows():
+                rowcount += 1
+                created_on_date = x.created_on.date().strftime("%Y-%m-%d")
+                diff = x.settlement_qty - x.unsold_qty
+                excess_in_stock, short_in_stock = 0.0, 0.0
+                if diff > 0:
+                    excess_in_stock = abs(diff)
+                elif diff < 0:
+                    short_in_stock = abs(diff)
+                row = [rowcount ,vancodedict[x.van_code] ,x.van_code, productcodedict[x.product_code],created_on_date, x.product_name, x.product_code, excess_in_stock, short_in_stock, x.price ]
+                rows.append(row)
+            try:
+                report = ExcessAndShortReport(db_name, hostname, user, report_start_date, report_end_date)
+                url = report.generate(rows)
+            except Exception as e:
+                err = str(traceback.format_exc())
+                print('ERROR report generation = ', err, ' on hostname: ', hostname)
+
+            data = {
+                'header': header,
+                'rows': rows,
+                'excel_url': url,
+                'count': len(rows),
+            }
+            
+            response = {"status": True, "code": 200, "message": "Excess And Short Report Fetched successfully", "data" : data}
+        except Exception as e:
+            err = str(traceback.format_exc())
+            print('ERROR report generation = ', err, ' on hostname: ', hostname)
+            response = {"status": False, "code": 500, "message": "Internal Server Error"}
+        return JsonResponse(response, safe=False)

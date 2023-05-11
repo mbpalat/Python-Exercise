@@ -27,3 +27,26 @@ func()
         # base_rate_name = map(lambda base_rate_object: base_rate_objects.rate_name ,base_rate_objects)
         # base_rate_objects.delete()
         # Product.objects.using(db_name).filter(name__in=base_rate_name).delete()
+
+        # productcodedict = {product.get('code'): product for product in products}
+        # product_obj = productcodedict.get(product_code, {})
+        # product_description = product_obj.get('description', '')
+
+
+            #     productcodedict = {product.get('code'): product.get('description') for product in products}
+            # except Exception as e:
+            #     err = str(traceback.format_exc())
+            #     print('Error in getting excess_short report %s on hostname: %s' % (err, hostname))
+
+            # for key, y in van_obj.iterrows():
+            #     if y.get('name') and y.get('code')
+            #         name = y.get('name')
+            #         code = y.get('code')
+            #         vancodedict.update({
+            #             code: name
+            #         })
+
+        # product_map = {x.code: x for x in product_objs}
+        # partner_domain = {x.partner_domain: x for x in product_objs}
+        # self.product_map = product_map
+        
